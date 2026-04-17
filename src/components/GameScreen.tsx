@@ -17,10 +17,19 @@ export default function GameScreen({ onGameEnd }: Props) {
   const [feedbackCorrect, setFeedbackCorrect] = useState(false);
   const [bestCents, setBestCents] = useState<number | null>(null);
 
-  const roundRef = useRef<{ higherFirst: boolean } | null>(null);
-  const { isPlaying, isSupported, analyser, play } = useAudioEngine();
+  const roundRef = useRef<{ higherFirst: boolean; baseFreq: number; higherFreq: number } | null>(null);
+  const { isPlaying, isSupported, analyser, play, playSingleTone, replayBoth } = useAudioEngine();
 
   const currentCents = LEVELS[level];
+
+  const getToneFreqs = () => {
+    if (!roundRef.current) return { tone1Freq: 0, tone2Freq: 0 };
+    const { higherFirst, baseFreq, higherFreq } = roundRef.current;
+    return {
+      tone1Freq: higherFirst ? higherFreq : baseFreq,
+      tone2Freq: higherFirst ? baseFreq : higherFreq,
+    };
+  };
 
   const playSequence = useCallback(async () => {
     if (phase === 'playing') return;
@@ -32,18 +41,28 @@ export default function GameScreen({ onGameEnd }: Props) {
     setPhase('answering');
   }, [phase, play, currentCents]);
 
-  const replay = useCallback(async () => {
-    if (phase !== 'answering') return;
-    setPhase('playing');
-    const result = await play(currentCents);
-    roundRef.current = result;
-    setPhase('answering');
-  }, [phase, play, currentCents]);
+  const replayLeft = useCallback(async () => {
+    if (isPlaying || !roundRef.current) return;
+    const { tone1Freq } = getToneFreqs();
+    await playSingleTone(tone1Freq);
+  }, [isPlaying, playSingleTone]);
 
-  const handleAnswer = useCallback((choseTone1Higher: boolean) => {
-    if (phase !== 'answering' || !roundRef.current) return;
+  const replayRight = useCallback(async () => {
+    if (isPlaying || !roundRef.current) return;
+    const { tone2Freq } = getToneFreqs();
+    await playSingleTone(tone2Freq);
+  }, [isPlaying, playSingleTone]);
 
-    const correct = choseTone1Higher === roundRef.current.higherFirst;
+  const replayAll = useCallback(async () => {
+    if (isPlaying || !roundRef.current) return;
+    const { tone1Freq, tone2Freq } = getToneFreqs();
+    await replayBoth(tone1Freq, tone2Freq);
+  }, [isPlaying, replayBoth]);
+
+  const handleAnswer = useCallback((choseLeftHigher: boolean) => {
+    if (phase !== 'answering' || !roundRef.current || isPlaying) return;
+
+    const correct = choseLeftHigher === roundRef.current.higherFirst;
 
     if (correct) {
       setFeedbackMsg('Correct!');
@@ -61,8 +80,8 @@ export default function GameScreen({ onGameEnd }: Props) {
         }
       }, 1000);
     } else {
-      const whichTone = roundRef.current.higherFirst ? 'Tone 1' : 'Tone 2';
-      setFeedbackMsg(`Wrong - that was ${whichTone}`);
+      const whichTone = roundRef.current.higherFirst ? 'Left' : 'Right';
+      setFeedbackMsg(`Wrong – that was ${whichTone}`);
       setFeedbackCorrect(false);
       setPhase('feedback');
 
@@ -78,7 +97,7 @@ export default function GameScreen({ onGameEnd }: Props) {
         }
       }, 1500);
     }
-  }, [phase, level, lives, currentCents, bestCents, onGameEnd]);
+  }, [phase, isPlaying, level, lives, currentCents, bestCents, onGameEnd]);
 
   if (!isSupported) {
     return (
@@ -112,59 +131,104 @@ export default function GameScreen({ onGameEnd }: Props) {
       </div>
 
       {/* Waveform */}
-      <div className="w-full mb-8 rounded-lg overflow-hidden bg-surface/50 border border-neutral-800">
+      <div className="w-full mb-6 rounded-lg overflow-hidden bg-surface/50 border border-neutral-800">
         <WaveformVisualizer analyser={analyser} isPlaying={isPlaying} />
       </div>
 
-      {/* Play button */}
-      <button
-        onClick={playSequence}
-        disabled={phase === 'playing' || phase === 'feedback'}
-        className={`
-          w-full py-4 rounded-xl font-semibold text-lg tracking-wide
-          transition-all duration-200
-          ${phase === 'playing'
-            ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
-            : phase === 'answering' || phase === 'feedback'
-              ? 'bg-neutral-800/50 text-neutral-600 cursor-not-allowed'
-              : 'bg-teal text-bg hover:bg-teal-dim active:scale-[0.98] cursor-pointer'
-          }
-        `}
-      >
-        {phase === 'playing' ? 'Playing…' : '▶ Play'}
-      </button>
-
-      {/* Replay link */}
-      {phase === 'answering' && (
+      {/* Play button — idle state */}
+      {phase === 'idle' && (
         <button
-          onClick={replay}
-          className="mt-3 text-sm text-teal/70 hover:text-teal transition-colors cursor-pointer"
+          onClick={playSequence}
+          className="w-full py-4 rounded-xl font-semibold text-lg tracking-wide transition-all duration-200 bg-teal text-bg hover:bg-teal-dim active:scale-[0.98] cursor-pointer"
         >
-          ↺ Replay
+          ▶ Play
         </button>
+      )}
+
+      {/* Playing indicator */}
+      {phase === 'playing' && (
+        <button
+          disabled
+          className="w-full py-4 rounded-xl font-semibold text-lg tracking-wide bg-neutral-800 text-neutral-500 cursor-not-allowed"
+        >
+          Playing…
+        </button>
+      )}
+
+      {/* Tone panels — answering / feedback phases */}
+      {(phase === 'answering' || phase === 'feedback') && (
+        <>
+          <div className="w-full grid grid-cols-2 gap-3 mb-3">
+            {/* Left panel */}
+            <div className="rounded-xl border border-neutral-700 bg-surface p-4 flex flex-col items-center gap-2">
+              <span className="text-sm font-medium text-neutral-400 tracking-wide">Left</span>
+              <button
+                onClick={replayLeft}
+                disabled={phase !== 'answering' || isPlaying}
+                className={`
+                  w-full py-3 rounded-lg font-medium text-sm transition-all duration-200
+                  ${phase === 'answering' && !isPlaying
+                    ? 'bg-teal/10 text-teal border border-teal/30 hover:bg-teal/20 cursor-pointer active:scale-[0.97]'
+                    : 'bg-neutral-800/50 text-neutral-600 border border-neutral-800 cursor-not-allowed'
+                  }
+                `}
+              >
+                ▶ Left
+              </button>
+            </div>
+
+            {/* Right panel */}
+            <div className="rounded-xl border border-neutral-700 bg-surface p-4 flex flex-col items-center gap-2">
+              <span className="text-sm font-medium text-neutral-400 tracking-wide">Right</span>
+              <button
+                onClick={replayRight}
+                disabled={phase !== 'answering' || isPlaying}
+                className={`
+                  w-full py-3 rounded-lg font-medium text-sm transition-all duration-200
+                  ${phase === 'answering' && !isPlaying
+                    ? 'bg-teal/10 text-teal border border-teal/30 hover:bg-teal/20 cursor-pointer active:scale-[0.97]'
+                    : 'bg-neutral-800/50 text-neutral-600 border border-neutral-800 cursor-not-allowed'
+                  }
+                `}
+              >
+                ▶ Right
+              </button>
+            </div>
+          </div>
+
+          {/* Replay both link */}
+          {phase === 'answering' && !isPlaying && (
+            <button
+              onClick={replayAll}
+              className="mb-2 text-sm text-teal/70 hover:text-teal transition-colors cursor-pointer"
+            >
+              ↺ Replay both
+            </button>
+          )}
+        </>
       )}
 
       {/* Answer buttons */}
       <div
         className={`
-          w-full grid grid-cols-2 gap-3 mt-6
+          w-full grid grid-cols-2 gap-3 mt-4
           transition-all duration-300
-          ${phase === 'answering' ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}
+          ${phase === 'answering' && !isPlaying ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}
         `}
       >
         <button
           onClick={() => handleAnswer(true)}
-          disabled={phase !== 'answering'}
+          disabled={phase !== 'answering' || isPlaying}
           className="py-4 rounded-xl font-medium border border-neutral-700 bg-surface hover:border-teal hover:text-teal transition-all duration-200 cursor-pointer active:scale-[0.97]"
         >
-          Tone 1 was higher
+          Left was higher
         </button>
         <button
           onClick={() => handleAnswer(false)}
-          disabled={phase !== 'answering'}
+          disabled={phase !== 'answering' || isPlaying}
           className="py-4 rounded-xl font-medium border border-neutral-700 bg-surface hover:border-teal hover:text-teal transition-all duration-200 cursor-pointer active:scale-[0.97]"
         >
-          Tone 2 was higher
+          Right was higher
         </button>
       </div>
 

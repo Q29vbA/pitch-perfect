@@ -11,6 +11,8 @@ interface AudioEngine {
   isSupported: boolean;
   analyser: AnalyserNode | null;
   play: (cents: number) => Promise<PlayResult>;
+  playSingleTone: (freq: number) => Promise<void>;
+  replayBoth: (tone1Freq: number, tone2Freq: number) => Promise<void>;
 }
 
 export function useAudioEngine(): AudioEngine {
@@ -88,10 +90,45 @@ export function useAudioEngine(): AudioEngine {
     });
   }, [getContext, playTone]);
 
+  const playSingleTone = useCallback(async (freq: number): Promise<void> => {
+    const ctx = getContext();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    setIsPlaying(true);
+    const now = ctx.currentTime + 0.05;
+    playTone(ctx, freq, now);
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        setIsPlaying(false);
+        resolve();
+      }, 1200);
+    });
+  }, [getContext, playTone]);
+
+  const replayBoth = useCallback(async (tone1Freq: number, tone2Freq: number): Promise<void> => {
+    const ctx = getContext();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    setIsPlaying(true);
+    const now = ctx.currentTime + 0.05;
+    playTone(ctx, tone1Freq, now);
+    playTone(ctx, tone2Freq, now + 1.2 + 0.6);
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        setIsPlaying(false);
+        resolve();
+      }, 3000);
+    });
+  }, [getContext, playTone]);
+
   return {
     isPlaying,
     isSupported,
     analyser: analyserState,
     play,
+    playSingleTone,
+    replayBoth,
   };
 }

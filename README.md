@@ -32,7 +32,7 @@ Build a complete React + Vite web app called Pitch Perfect. The game trains and 
 - The two tones differ by exactly N cents, where N is the current level's difficulty value
 - Frequency of the higher tone = baseFreq * 2^(cents/1200) - this is the correct musical formula
 - Which tone plays first (the higher or the lower) is randomized each round
-- The player is told "Tone 1" and "Tone 2" - they must identify which was higher
+- The two tones are labelled "Left" and "Right" - the player must identify which was higher
 
 ---
 
@@ -50,7 +50,7 @@ Build a complete React + Vite web app called Pitch Perfect. The game trains and 
 
 - Player starts with 3 lives, displayed as filled/empty icons (unicode ears or hearts)
 - Lives carry across all levels - a life is lost whenever the player answers incorrectly
-- On a wrong answer: show brief feedback ("Wrong - that was Tone X"), subtract a life, then after 1.5s stay on the same level and generate a new pair of tones
+- On a wrong answer: show brief feedback ("Wrong – that was Left/Right"), subtract a life, then after 1.5s stay on the same level and generate a new pair of tones
 - On a correct answer: show brief feedback ("Correct!"), then after 1s advance to the next level
 - When all 3 lives are lost: trigger the End Screen
 - If the player clears all 16 levels: also trigger the End Screen (as a win state)
@@ -69,8 +69,8 @@ Game screen contains:
 - Top bar: level indicator (e.g. "Level 7 / 16") + 3 life icons
 - Center: a waveform visualizer - a live animated sine wave using a Canvas element and AnalyserNode from Web Audio. It should pulse and animate while a tone is playing, and flatline (or gently idle) when silent
 - A "Play" button to trigger the two-tone sequence. After pressing, it becomes disabled and shows "Playing..." until both tones finish
-- After both tones finish: two large buttons appear - "Tone 1 was higher" and "Tone 2 was higher"
-- A small "Replay" link/button that replays the sequence. Only available after the first play and before the answer is submitted
+- After both tones finish: two side-by-side panels (Left / Right) appear, each with a replay button to replay that tone individually, plus a "Replay both" link
+- Two large answer buttons: "Left was higher" and "Right was higher"
 - Feedback shown inline (not a modal) - short colored message below the buttons: green for correct, red for wrong
 - Smooth CSS transitions between states (playing -> answering -> feedback -> next round)
 
@@ -134,13 +134,16 @@ src/
 - Don't use any UI component library (no MUI, no shadcn) - write the styling with Tailwind directly so it looks custom
 - Don't make it a PWA - keep scope tight
 
+
+second prompt (not included) - minor changes, fix replay, split to two tone panels, add favicon
 </details>
 
 A frequency discrimination game that trains and tests your ability to distinguish which of two tones is higher in pitch. Built with React, Vite, and the Web Audio API - no audio files, no libraries, no backend.
 
 ## How It Works
 
-- Listen to two pure sine-wave tones and identify which was higher
+- Listen to two pure sine-wave tones (labelled **Left** and **Right**) and identify which was higher
+- After the initial listen, replay either tone individually or both together
 - Progress through 16 levels of increasing difficulty
 - Difficulty is measured in **cents** (a musical unit - 1200 cents = one octave), hidden from the player
 - You have 3 lives across all levels. Wrong answers cost a life; lose them all and the game ends
@@ -204,10 +207,10 @@ idle → playing → answering → feedback → idle (next round)
 
 - **idle** - waiting for the player to press Play
 - **playing** - audio is running; Play is disabled; answer buttons are hidden
-- **answering** - audio has finished; answer buttons and Replay are shown
+- **answering** - audio has finished; two tone panels (Left / Right) with individual replay buttons are shown, along with answer buttons
 - **feedback** - answer was submitted; result is displayed; buttons are locked for 1–1.5 s before transitioning
 
-The `roundRef` stores `{ higherFirst }` - which tone was actually higher - so the answer check is a single boolean comparison. It's a ref (not state) because it doesn't need to trigger a re-render; it just needs to be readable synchronously when the player taps.
+The `roundRef` stores `{ higherFirst, baseFreq, higherFreq }` - which tone was actually higher plus both frequencies - so the answer check is a single boolean comparison, and per-tone replay can reuse the exact same frequencies. It's a ref (not state) because it doesn't need to trigger a re-render; it just needs to be readable synchronously when the player taps.
 
 ### Difficulty curve
 
